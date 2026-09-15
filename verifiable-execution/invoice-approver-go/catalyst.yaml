@@ -1,0 +1,12 @@
+# Run on Diagrid Catalyst:
+#   export OPENAI_API_KEY=sk-...
+#   diagrid dev run -f catalyst.yaml --project invoice-audit-byodb --skip-managed-workflow
+version: 1
+common:
+  logLevel: info
+  appLogDestination: console
+  enableAppHealthCheck: false
+apps:
+  - appID: invoice-approver
+    appDirPath: ./
+    command: ["./invoice-approver"]   # go build -o invoice-approver . first

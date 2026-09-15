@@ -1,0 +1,9 @@
+# local demo artifacts — do not commit
+*.pem
+receipt*.json
+fresh*.json
+__pycache__/
+.idea/
+
+# compiled binary
+invoice-approver
