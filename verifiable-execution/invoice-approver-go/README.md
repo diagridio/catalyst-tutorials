@@ -282,3 +282,8 @@ diagrid project delete invoice-audit-byodb
 ```
 
 Then drop the database, or run `DELETE FROM state`, once you have your screenshots.
+
+## Run It on Kubernetes
+
+A persistent copy of this demo runs on the `demo-production-catalyst` cluster. The manifests and
+the runbook are in [`deploy/`](deploy/README.md).

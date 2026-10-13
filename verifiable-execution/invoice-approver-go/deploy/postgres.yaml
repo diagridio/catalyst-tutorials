@@ -1,0 +1,142 @@
+# The Postgres database that holds the signed workflow history, on
+# demo-production-catalyst. It is the database the demo tampers with.
+#
+# Catalyst's Dapr sidecar runs in the Catalyst region, not in this cluster, so
+# it reaches this database over the internet: a public LoadBalancer with a fixed
+# Azure DNS name, open only to Catalyst's egress address, SSL required, and a
+# generated password.
+#
+# Secrets are NOT in this file. Create postgres-auth and postgres-tls first.
+# See deploy/README.md.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: verifiable-execution-demo
+---
+# Remote logins must use SSL. Local socket and 127.0.0.1 logins (the readiness
+# probe, kubectl port-forward) stay passwordless, as in the image's default file.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-hba
+  namespace: verifiable-execution-demo
+data:
+  pg_hba.conf: |
+    local   all  all                 trust
+    host    all  all  127.0.0.1/32   trust
+    host    all  all  ::1/128        trust
+    hostssl all  all  all            scram-sha-256
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: verifiable-execution-demo
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        # gid 70 is postgres in the alpine image. Postgres accepts a root-owned
+        # TLS key only with mode 0640 and its own group, which this sets up.
+        fsGroup: 70
+      containers:
+        - name: postgres
+          image: public.ecr.aws/docker/library/postgres:16-alpine
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/tls/tls.crt
+            - -c
+            - ssl_key_file=/tls/tls.key
+            - -c
+            - hba_file=/hba/pg_hba.conf
+            # Logs each client address. That is how Catalyst's egress address
+            # below was found, and how to spot a new one.
+            - -c
+            - log_connections=on
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-auth
+                  key: password
+            # The disk's root holds lost+found, which initdb refuses.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: hba
+              mountPath: /hba
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: tls
+          secret:
+            secretName: postgres-tls
+            defaultMode: 0640
+        - name: hba
+          configMap:
+            name: postgres-hba
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: managed-csi
+        resources:
+          requests:
+            storage: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: verifiable-execution-demo
+  annotations:
+    # Stable hostname for the Catalyst component's connection string:
+    # diagrid-ve-demo-pg.westeurope.cloudapp.azure.com
+    service.beta.kubernetes.io/azure-dns-label-name: diagrid-ve-demo-pg
+spec:
+  type: LoadBalancer
+  # Keep the client's source address, for log_connections above.
+  externalTrafficPolicy: Local
+  # The diagrid-aws-eu-west region's published egress address, from
+  # `diagrid region get diagrid-aws-eu-west` (egressAddresses). If that list
+  # changes, wf-store fails until the new address is added here.
+  loadBalancerSourceRanges:
+    - 54.155.61.100/32
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

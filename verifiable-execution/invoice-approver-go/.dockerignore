@@ -1,0 +1,6 @@
+# The image is public. Send the build only what it compiles, so local receipts,
+# trust bundles and keys can never end up in it.
+*
+!go.mod
+!go.sum
+!main.go

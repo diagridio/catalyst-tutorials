@@ -1,0 +1,68 @@
+# invoice-approver on demo-production-catalyst.
+#
+# The agent process runs here; Catalyst (Demo Production Catalyst org, project
+# verifiable-execution-demo) hosts the workflow engine and signs the history,
+# which it writes to the Postgres in postgres.yaml.
+#
+# Each time the pod starts it runs one invoice workflow with a generated
+# instance ID, then stays up as a workflow worker so runs can be rerun from the
+# console or CLI. INSTANCE_ID stays unset. With a fixed ID, a restart after the
+# history was tampered with is refused and the pod crash-loops.
+#
+# Secrets are NOT in this file. Create them first. See deploy/README.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invoice-approver
+  namespace: verifiable-execution-demo
+  labels:
+    app: invoice-approver
+spec:
+  replicas: 1
+  # Never two workers at once: each start is a new run.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: invoice-approver
+  template:
+    metadata:
+      labels:
+        app: invoice-approver
+    spec:
+      containers:
+        - name: invoice-approver
+          image: public.ecr.aws/d3f9w4q8/verifiable-execution-demo/invoice-approver:1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            # INV-2026-0312 is the flagged, over-limit invoice: it ends HELD.
+            - name: INVOICE_ID
+              value: INV-2026-0312
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai
+                  key: apiKey
+            # Catalyst connection: the App ID's token and endpoints.
+            - name: DAPR_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: catalyst-invoice-approver
+                  key: apiToken
+            - name: DAPR_GRPC_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: catalyst-invoice-approver
+                  key: grpcEndpoint
+            - name: DAPR_HTTP_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: catalyst-invoice-approver
+                  key: httpEndpoint
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
