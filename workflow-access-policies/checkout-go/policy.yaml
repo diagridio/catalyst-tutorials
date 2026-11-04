@@ -1,0 +1,25 @@
+# Only checkout may charge cards on payments-service, or start its
+# ChargeCustomer workflow. Any other app that tries is denied before
+# payments-service runs a line of code.
+apiVersion: dapr.io/v1alpha1
+kind: WorkflowAccessPolicy
+metadata:
+  name: payments-service-access
+scopes:
+- payments-service
+spec:
+  rules:
+  - callers:
+    - appID: checkout
+    workflows:
+    - name: ChargeCustomer
+      operations: [schedule]
+    activities:
+    - name: ChargeCard
+      # Dapr 1.19 adds `requires`: only allow the call if the caller's signed,
+      # propagated workflow history shows these events, in this order. Coming
+      # soon to Catalyst. Uncomment it once it is available there.
+#       requires:
+#       - eventType: activity.completed
+#         name: fraud-check
+#         appID: checkout

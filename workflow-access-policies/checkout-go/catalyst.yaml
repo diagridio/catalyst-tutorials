@@ -1,0 +1,18 @@
+# Run on Diagrid Catalyst:
+#   go build -o bin/ ./...
+#   diagrid dev run -f catalyst.yaml --project demo-wf-acl --skip-managed-pubsub --skip-managed-kv
+version: 1
+common:
+  logLevel: info
+  appLogDestination: console
+  enableAppHealthCheck: false
+apps:
+  - appID: checkout
+    appDirPath: ./
+    command: ["./bin/checkout"]
+  - appID: payments-service
+    appDirPath: ./
+    command: ["./bin/payments-service"]
+  - appID: rewards
+    appDirPath: ./
+    command: ["./bin/rewards"]
